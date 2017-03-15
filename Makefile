@@ -14,23 +14,27 @@ else
     LDFLAGS += -g
 endif
 
-all: pathfinder
+all: pathfinder actorconnections extension 
 
 
 
 # include what ever source code *.h files pathfinder relies on (these are merely the ones that were used in the solution)
 
-pathfinder: ActorGraph.o
-
-
+pathfinder: ActorGraph.o ActorEdge.o ActorNode.o ActorYear.o 
+actorconnections: ActorGraph.o ActorEdge.o ActorNode.o ActorYear.o UnionFind.o Timer.o 
+extension: ExtensionActorGraph.o
 
 # include what ever source code *.h files ActorGraph relies on (these are merely the ones that were used in the solution)
 
 # Note: you do not have to include a *.cpp file if it aleady has a paired *.h file that is already included with class/method headers
-
-ActorGraph.o: UnionFind.hpp Movie.h ActorNode.h ActorEdge.h ActorGraph.h
-
-
+# add UnionFind.hpp later
+ActorGraph.o: UnionFind.o ActorNode.o ActorEdge.o ActorYear.o ActorGraph.h
+ActorEdge.o: ActorEdge.h 
+ActorNode.o: ActorNode.h 
+ActorYear.o: ActorYear.h
+UnionFind.o: UnionFind.h
+Timer.o: Timer.h
+ExtensionActorGraph.o: ExtensionActorGraph.h
 clean:
 	rm -f pathfinder *.o core*
 

@@ -1,77 +1,23 @@
-/*
- * ActorGraph.cpp
- * Author: <YOUR NAME HERE>
- * Date:   <DATE HERE>
- *
- * This file is meant to exist as a container for starter code that you can use to read the input file format
- * defined in movie_casts.tsv. Feel free to modify any/all aspects as you wish.
- */
- 
-#include <fstream>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
+//Name: Phillip Jo, San Kang
+//Date: 03/15/2017
+//Overview: The implemantation of "ActorGraph.h"
+//Assignment#: PA4
 #include "ActorGraph.h"
 using namespace std;
-
-Node::Node()
+bool ActorGraph::loadFromFile(const char* in_filename, ostream& outs, bool use_weighted_edges)
 {
-  actorName = "";
-  isItVisited = false;
-  prev = nullptr;
-  dist = -1;
-  groupNumber = -1;
-  isItDeleted = true;  
-}
-
-Node::Node(string actor_name, string movie_title, int movie_year)
-{
-  actorName = actor_name;
-  movieList.push_back(movie_title);
-  yearList.push_back(movie_year);
-  isItVisited = false;
-  dist = -1;
-  prev = nullptr;
-  groupNumber = -1;
-  isItDeleted = true;
-}
-
-bool Node::operator<(const Node& other)
-{
-  if(dist != other.dist)
-  {
-    return dist > other.dist;
-  }
-  return actorName < other.actorName;
-}
-
-ActorGraph::ActorGraph(void)
-{
-  m_currGroupNumber = 0;  
-}
-
-bool ActorGraph::loadFromFile(const char* in_filename, bool use_weighted_edges) 
-{
-  // Initialize the file stream
-  ifstream infile(in_filename);
-
+  fstream infile(in_filename);
   bool have_header = false;
-  
-  // keep reading lines until the end of file is reached
-  while (infile) 
+  while (infile)
   {
     string s;
-    
-    // get the next line
     if (!getline( infile, s ))
-    { 
+    {
       break;
     }
 
-    if (!have_header) 
+    if (!have_header)
     {
-      // skip the header
       have_header = true;
       continue;
     }
@@ -79,11 +25,85 @@ bool ActorGraph::loadFromFile(const char* in_filename, bool use_weighted_edges)
     istringstream ss( s );
     vector <string> record;
 
-    while (ss) 
+    while (ss)
     {
       string next;
-      
-      // get the next string before hitting a tab character and put it in 'next'
+      if (!getline( ss, next, '\t' ))
+      {
+        break;
+      }
+      record.push_back( next );
+    }
+
+    if (record.size() != 3)
+    {
+      if(use_weighted_edges == false)
+      {
+        if(!findTheShortestPath(record[0], record[1]))
+        {
+          m_start_point = nullptr;
+        }
+      }
+      else
+      {
+        if(!dijkstraAlgorithm(record[0], record[1]))
+        {
+          m_start_point = nullptr;
+        }
+      }
+      printOutThePath(m_start_point, outs);
+      if(m_start_point != nullptr)
+      {
+        outs << endl;
+      }
+      else
+      {
+        outs << "(" << record[0] << ")" << "--[NO PATH]-->" << "(" << record[1] << ")" << endl;
+      }
+      makeAllUnvisited();
+    }
+    else
+    {
+      string actor_name(record[0]);
+      string movie_title(record[1]);
+      unsigned int  movie_year = stoi(record[2]);
+      createGraph(actor_name, movie_title, movie_year);
+    }
+  }
+
+  if (!infile.eof())
+  {
+    cerr << "Failed to read " << in_filename << "!\n";
+    return false;
+  }
+  infile.close();
+  return true;
+}
+
+bool ActorGraph::loadFromFile(const char* in_filename, ostream& outs)
+{
+  fstream infile(in_filename);
+  bool have_header = false;
+  while (infile)
+  { 
+    string s;
+    if (!getline( infile, s ))
+    { 
+      break;
+    }
+    
+    if (!have_header)
+    { 
+      have_header = true;
+      continue;
+    }
+    
+    istringstream ss( s );
+    vector <string> record;
+    
+    while (ss)
+    { 
+      string next;
       if (!getline( ss, next, '\t' ))
       { 
         break;
@@ -91,484 +111,372 @@ bool ActorGraph::loadFromFile(const char* in_filename, bool use_weighted_edges)
       record.push_back( next );
     }
     
-    if (record.size() != 3) 
-    {
-       tempVector.push_back(record[0]);
-       tempVector.push_back(record[1]);
+    if (record.size() != 3)
+    { 
+      bool isItValid = true;
+      actorPair myPair;
+      myPair.actor_one = record[0];
+      myPair.actor_two = record[1];
+      m_pair_list.push_back(myPair);
+      actor_it = m_actor_list.find(record[0]);
+      if(actor_it == m_actor_list.end())
+      {
+        isItValid = false;   
+      }
+      actor_it = m_actor_list.find(record[1]);
+      if(actor_it == m_actor_list.end())
+      {
+        isItValid = false;
+      }
+      if(isItValid == false)
+      {
+        m_pair_list[m_pair_list.size()-1].connect = true;
+        ++m_numOfInvalid;
+      }
     }
     else
-    {
+    { 
       string actor_name(record[0]);
       string movie_title(record[1]);
-      int  movie_year = stoi(record[2]);
-      createListOfActors(actor_name, movie_title, movie_year);
+      unsigned int  movie_year = stoi(record[2]);
+      createActorConnectionGraph(record[0], record[1], movie_year); 
     }
   }
 
-  if (!infile.eof()) 
+  if (!infile.eof())
   {
     cerr << "Failed to read " << in_filename << "!\n";
     return false;
   }
   infile.close();
-
   return true;
-}
+}                          
 
-void ActorGraph::createActorGraph()
+ActorGraph::ActorGraph()
 {
-  int index = 0;
-  while(0 < listOfActors.size())
-  {
-    index = listOfActors.size() - 1;
-    for(int i = index - 1; i >= 0; --i)
-    {
-      if(doTheyShareMovie(listOfActors[index], listOfActors[i]) == true)
-      {
-        connectTwoActors(listOfActors[index], listOfActors[i]);
-      }
-    }
-    listOfActors.pop_back();  
-  }
-  updateListOfStartNode();  
+  m_start_point = nullptr;
+  m_numOfInvalid = 0;
 }
-
-bool ActorGraph::doTheyShareMovie(Node* actor_one, Node* actor_two)
+//This method creates a graph for "pathfinder.cpp"
+void ActorGraph::createGraph(string actor_name, string movie_name, int year)
 {
-  for(int i=0; i < actor_one->movieList.size(); ++i)
+  actor_it = m_actor_list.find(actor_name);
+  string full_movie_name = movie_name + "#@" + to_string(year);
+  movie_it = m_movie_list.find(full_movie_name);
+  if(actor_it == m_actor_list.end())
   {
-    for(int j=0; j < actor_two->movieList.size(); ++j)
-    {
-      if(actor_one->movieList[i] == actor_two->movieList[j] && actor_one->yearList[i] == actor_two->yearList[j])
-      {
-        return true;
-      }
-    }
+    Node* newActorNode = new Node(actor_name);
+    m_actor_list[actor_name] = newActorNode;
+    actor_it = m_actor_list.find(actor_name);  
   }
-  return false;
+  if(movie_it == m_movie_list.end())
+  {
+    Edge* newMovieNode = new Edge(full_movie_name, year);
+    m_movie_list[full_movie_name] = newMovieNode;
+    movie_it = m_movie_list.find(full_movie_name);
+  }
+  (actor_it->second->m_movie_list).insert(full_movie_name);
+  (movie_it->second->m_actor_list).insert(actor_name);
 }
-
-void ActorGraph::connectTwoActors(Node* actor_one, Node* actor_two)
-{
-  int group_number_one = actor_one->groupNumber;
-  int group_number_two = actor_two->groupNumber;
-  if(group_number_one != -1 && group_number_two != -1)
-  {
-    if(group_number_one < group_number_two)
-    {
-      makeIndexEqual(actor_two, actor_one->groupNumber);
-    }
-    else if(group_number_two < group_number_one)
-    {
-      makeIndexEqual(actor_one, actor_two->groupNumber);
-    }
-    else
-    {
-    }
+//This method creates a graph for "actorconnections.cpp"
+void ActorGraph::createActorConnectionGraph(string actor_name, string movie_name, int year)
+{ 
+  actor_it = m_actor_list.find(actor_name);
+  string full_movie_name = movie_name + "#@" + to_string(year);
+  movie_it = m_movie_list.find(full_movie_name);
+  year_it = m_year_list.find(year);
+  if(actor_it == m_actor_list.end())
+  { 
+    Node* newActorNode = new Node(actor_name);
+    m_actor_list[actor_name] = newActorNode;
+    actor_it = m_actor_list.find(actor_name);
   }
-  else if(group_number_one == -1 && group_number_two == -1)
-  {
-    actor_one->groupNumber = m_currGroupNumber;
-    actor_two->groupNumber = m_currGroupNumber;
-    ++m_currGroupNumber;
-    listOfStartNode.push_back(actor_one);  
+  if(movie_it == m_movie_list.end())
+  { 
+    Edge* newMovieNode = new Edge(full_movie_name, year);
+    m_movie_list[full_movie_name] = newMovieNode;
+    movie_it = m_movie_list.find(full_movie_name);
   }
-  else
+  if(year_it == m_year_list.end())
   {
-    if(group_number_one != -1 && group_number_two == -1)
-    {
-      actor_two->groupNumber = actor_one->groupNumber;  
-    }
-    else 
-    {
-      actor_one->groupNumber = actor_two->groupNumber;
-    }
+    Year* newYearNode = new Year(year);
+    m_year_list[year] = newYearNode;
+    year_it = m_year_list.find(year);
   }
-  actor_one->adjacentList.push_back(actor_two);
-  actor_two->adjacentList.push_back(actor_one);
-}
-
-void ActorGraph::makeIndexEqual(Node* actorPtr, int index)
-{
-  bool allClear = true;
-  stack<Node*> myStack;
-  Node* searchPtr = actorPtr;
-  searchPtr->groupNumber = index;
-  myStack.push(searchPtr);
-  while(!myStack.empty())
+  (movie_it->second->m_actor_list).insert(actor_name);
+  if(year_it->second->m_edge_list.find(full_movie_name) == year_it->second->m_edge_list.end())
   {
-    allClear = true;
-    searchPtr = myStack.top();
-    for(int i=0; i < searchPtr->adjacentList.size(); ++i)
-    {
-      if(searchPtr->adjacentList[i]->groupNumber != index)
-      {
-        searchPtr->adjacentList[i]->groupNumber = index;
-        allClear = false;
-        myStack.push(searchPtr->adjacentList[i]);  
-      }
-    }
-    if(allClear == true)
-    {
-      myStack.pop();
-    }
-  }  
-}
-
-void ActorGraph::createListOfActors(string actor_name, string movie_title, int movie_year)
-{
-  bool exist = false;
-  for(int i=0; i < listOfActors.size(); ++i)
-  {
-    if(listOfActors[i]->actorName == actor_name)
-    {
-      exist = true;
-      listOfActors[i]->movieList.push_back(movie_title);
-      listOfActors[i]->yearList.push_back(movie_year);
-      break;  
-    }
-  }
-  
-  if(exist == false)
-  {
-    Node* newNode = new Node(actor_name, movie_title, movie_year);
-    listOfActors.push_back(newNode);
+    (year_it->second->m_edge_list).insert(full_movie_name);
   }
 }
-
-void ActorGraph::updateListOfStartNode()
+//This method creates a priority queue based on what year a movie was made
+void ActorGraph::createPriorityQueue()
 {
-  vector<Node*> neo_list;
-  neo_list.push_back(listOfStartNode[0]);
-  bool sameExist = false;
-  for(int i=1; i < listOfStartNode.size(); ++i)
+  for(year_it = m_year_list.begin(); year_it != m_year_list.end(); ++year_it)
   {
-    sameExist = false;
-    for(int j=0; j < neo_list.size(); ++j)
-    {
-      if(listOfStartNode[i]->groupNumber == neo_list[j]->groupNumber)
-      {
-        sameExist = true;
-        break;
-      }
-    }
-    if(sameExist == false)
-    {
-      neo_list.push_back(listOfStartNode[i]);
-    }
-  }
-  listOfStartNode.clear();
-  listOfStartNode = neo_list;   
-}
-/*
-void ActorGraph::updateAdjacentList(bool fromEmpty, Node* currNode, string movie_title, int movie_year)
-{
-  Node* searchPtr;
-  if(fromEmpty)
-  {
-    searchPtr = m_startNode;
-  }
-  else
-  {
-    searchPtr = currNode;
-  }
-  stack<Node*> myStack;
-  bool allVisited;
-  searchPtr->isItVisited = true;
-  myStack.push(searchPtr)
-  while(!myStack.empty())
-  {
-    searchPtr = myStack.top();
-    if(searchPtr != currNode)
-    {
-      for(int i=0; i < searchPtr->movieList.size(); ++i)
-      {
-        if(searchPtr->movieList[i] == movie_title && searchPtr->yearList[i] == movie_year)
-        {
-          bool alreadyConnected = false;
-          for(int j=0; j < currNode->adjacentList.size(); ++j)
-          {
-            if(currNode->adjacentList[i]->actorName == searchPtr->actorName)
-            {
-              alreadyConnected = true;
-            }
-          }
-          if(alreadyConnected == false)
-          {
-            currNode->adjacentList.push_back(searchPtr);
-            searchPtr->adjacentList.push_back(currNode);
-          }
-        }
-      }
-    }
-    allVisited = true;
-    for(int i=0; i < searchPtr->adjacentList.size(); ++i)
-    {
-      if(searchPtr->adjacentList[i]->isItVisited == false)
-      {
-        allVisited = false;
-        searchPtr = searchPtr->adjacentList[i];
-        break;
-      }
-    }
-    if(allVisited == true)
-    {
-      myStack.pop();
-    }
-    else
-    {
-      searchPtr->isItVisited = true;
-      myStack.push(searchPtr);   
-    }  
+    m_priority_queue.push(year_it->second);
   }
 }
-*/
-pair<vector<string>, vector<int>> ActorGraph::sharedMovieList(Node* actor_one, Node* actor_two) const
+//This method finds the shortest path between two actors
+bool ActorGraph::findTheShortestPath(string actor_one_name, string actor_two_name)
 {
-  pair<vector<string>, vector<int> > myPair;
-  vector<string> myVector_one;
-  vector<int> myVector_two; 
-  for(int i=0; i < actor_one->movieList.size(); ++i)
-  {
-    for(int j=0; j < actor_two->movieList.size(); ++j)
-    {
-      if(actor_one->movieList[i] == actor_two->movieList[j] && actor_one->yearList[i] == actor_two->yearList[j])
-      {
-        myVector_one.push_back(actor_one->movieList[i]);
-        myVector_two.push_back(actor_two->yearList[i]);    
-      }
-    }
-  }
-  myPair.first = myVector_one;
-  myPair.second = myVector_two;
-  return myPair;  
-}
-
-Node* ActorGraph::getNodePtr(string actor_name) 
-{
-  bool allVisited;
-  Node* nodePtr = nullptr;
-  stack<Node*> myStack;
-  for(int i=0; i < listOfStartNode.size(); ++i)
-  {
-    nodePtr = listOfStartNode[i];
-    makeAllUnvisited(nodePtr);
-    myStack.push(nodePtr);
-    nodePtr->isItVisited = true;
-    while(!myStack.empty())
-    {
-      nodePtr = myStack.top();
-
-      if(nodePtr->actorName == actor_name)
-      {
-        return nodePtr;
-      }
-
-      allVisited = true;
-      for(int j=0; j < nodePtr->adjacentList.size(); ++j)
-      {
-        if(nodePtr->adjacentList[j]->isItVisited == false)
-        {
-          allVisited = false;
-          nodePtr = nodePtr->adjacentList[j];
-          break;
-        }
-      }
-      if(allVisited == true)
-      {
-        myStack.pop();
-      }
-      else
-      {
-        nodePtr->isItVisited = true;
-        myStack.push(nodePtr);
-      }
-    }
-  }
-  return nullptr;  
-}
-
-void ActorGraph::makeAllUnvisited(Node* startPoint)
-{
-  bool allVisited;
-  Node* searchPtr = startPoint;
-  stack<Node*> myStack;
-  myStack.push(searchPtr);
-  while(!myStack.empty())
-  {
-    searchPtr = myStack.top();
-    if(searchPtr->isItVisited == true)
-    {
-      searchPtr->isItVisited = false;
-    }
-    allVisited = true;
-    for(int i=0; i < searchPtr->adjacentList.size(); ++i)
-    {
-      if(searchPtr->adjacentList[i]->isItVisited == true)
-      {
-        allVisited = false;
-        searchPtr = searchPtr->adjacentList[i];
-        break;
-      }
-    }
-    if(allVisited == true)
-    {
-      myStack.pop();
-    }
-    else
-    {
-      myStack.push(searchPtr);
-    }
-  }
-}
-/*
-bool ActorGraph::unweightedBFS() const
-{
-  if(isItEmpty())
+  actor_it = m_actor_list.find(actor_one_name);
+  if(actor_it == m_actor_list.end())
   {
     return false;
   }
+  Node* actor_one = actor_it->second;
+  actor_it = m_actor_list.find(actor_two_name);
+  if(actor_it == m_actor_list.end())
+  {
+    return false;
+  } 
+  Node* actor_two = actor_it->second;
+  Node* searchPtr = actor_one;
   queue<Node*> myQueue;
-  Node* searchPtr = m_startNode; 
-  searchPtr->dist = 0;
-  myQueue.push(searchPtr)
+  myQueue.push(searchPtr);
+  searchPtr->weight = 0;
+  m_visited_node.push_back(searchPtr);
+  while(!myQueue.empty())
+  {
+    searchPtr = myQueue.front();
+    if(searchPtr == actor_two)
+    {
+      break;
+    }
+    for(movie_set_it = searchPtr->m_movie_list.begin(); movie_set_it != searchPtr->m_movie_list.end(); ++movie_set_it)
+    {
+      movie_it = m_movie_list.find(*movie_set_it);
+      Edge* tempMoviePtr = movie_it->second;
+      for(actor_set_it = tempMoviePtr->m_actor_list.begin(); actor_set_it != tempMoviePtr->m_actor_list.end(); ++actor_set_it)
+      {
+        actor_it = m_actor_list.find(*actor_set_it);
+        Node* tempActorPtr = actor_it->second;
+        if(searchPtr->weight+1 < tempActorPtr->weight)
+        {
+          tempActorPtr->weight = searchPtr->weight + 1;
+          tempActorPtr->prev = searchPtr;
+          tempActorPtr->prev_movie = *movie_set_it;
+          m_visited_node.push_back(tempActorPtr);
+          myQueue.push(tempActorPtr);
+        }
+      }    
+    }
+    myQueue.pop();
+  }
+  m_start_point = actor_two;
+  return true;   
+}
+//This method finds a path between two actors, which has the minimum weight.
+bool ActorGraph::dijkstraAlgorithm(string actor_one_name, string actor_two_name)
+{
+  actor_it = m_actor_list.find(actor_one_name);
+  if(actor_it == m_actor_list.end())
+  {
+    return false;
+  }
+  Node* actor_one = actor_it->second;
+  actor_it = m_actor_list.find(actor_two_name);
+  if(actor_it == m_actor_list.end())
+  {
+    return false;
+  }
+  Node* actor_two = actor_it->second;
+  Node* searchPtr = actor_one;
+  priority_queue<Node*, vector<Node*>, NodePtrComp> myQueue;
+  myQueue.push(searchPtr);
+  searchPtr->weight = 0;
+  m_visited_node.push_back(searchPtr);
   while(!myQueue.empty())
   {
     searchPtr = myQueue.top();
-    for(int i=0; i < searchPtr->adjacentList.size(); ++i)
+    if(searchPtr == actor_two)
     {
-      if(searchPtr->dist + 1 < searchPtr->adjacentList[i]->dist)
+      break;
+    }
+    for(movie_set_it = searchPtr->m_movie_list.begin(); movie_set_it != searchPtr->m_movie_list.end(); ++movie_set_it)
+    {
+      movie_it = m_movie_list.find(*movie_set_it);
+      Edge* tempMoviePtr = movie_it->second;
+      unsigned int current_weight = 2015 - tempMoviePtr->m_year + 1;
+      for(actor_set_it = tempMoviePtr->m_actor_list.begin(); actor_set_it != tempMoviePtr->m_actor_list.end(); ++actor_set_it)
       {
-        searchPtr->adjacentList[i]->dist = searchPtr->dist + 1;
-        searchPtr->adjacentList[i]->prev = searchPtr->actorName;
-        myQueue.push(searchPtr->adjacentList[i]);
+        actor_it = m_actor_list.find(*actor_set_it);
+        Node* tempActorPtr = actor_it->second;
+        if(searchPtr->weight+current_weight < tempActorPtr->weight)
+        {
+          tempActorPtr->weight = searchPtr->weight + current_weight;
+          tempActorPtr->prev = searchPtr;
+          tempActorPtr->prev_movie = *movie_set_it;
+          m_visited_node.push_back(tempActorPtr);
+          myQueue.push(tempActorPtr);
+        }
       }
     }
     myQueue.pop();
   }
-  return true; 
+  m_start_point = actor_two;
+  return true;
 }
-*/
-pair<stack<string>, stack<string> > ActorGraph::findTheShortestPath(string actor_one, string actor_two) 
+//This method prints out a path between two actors
+void ActorGraph::printOutThePath(Node* startPoint, ostream& outs) const
 {
-  priority_queue<Node*, vector<Node*>, NodePtrComp>  myQueue;
-  Node* startPoint = getNodePtr(actor_one);
-  Node* endPoint = getNodePtr(actor_two);
+  stack<string> movie_name_stack;
   stack<string> actor_name_stack;
-  stack<string> movie_title_stack;
-  pair<stack<string>, stack<string> > stack_pair;
-  if(startPoint == nullptr || endPoint == nullptr)
-  {
-    return stack_pair;
-  }
-  if(startPoint->groupNumber != endPoint->groupNumber)
-  {
-    return stack_pair;
-  }
   Node* searchPtr = startPoint;
-  searchPtr->dist = 0;
-  myQueue.push(searchPtr);
-  while(!myQueue.empty())
+  while(searchPtr != nullptr)
   {
-    searchPtr = myQueue.top();
-    myQueue.pop();  
-    if(searchPtr == endPoint)
-    {
-      break;
-    }
-    for(int i=0; i < searchPtr->adjacentList.size(); ++i)
-    {
-      if(searchPtr->dist + 1 < searchPtr->adjacentList[i]->dist)
-      {
-        searchPtr->adjacentList[i]->dist = searchPtr->dist + 1;
-        searchPtr->adjacentList[i]->prev = searchPtr;
-        myQueue.push(searchPtr->adjacentList[i]);
-      }
-    }
-  }
-  searchPtr = endPoint;
-  while(1)
-  {
-    pair<string, int> movie_pair;
-    actor_name_stack.push(searchPtr->actorName);
-    if(searchPtr == startPoint)
-    {
-      break;
-    }
-    movie_pair = getSharedMovie(searchPtr, searchPtr->prev);
-    string year = to_string(movie_pair.second);
-    string full_movie_name = movie_pair.first + "#@" + year;
-    movie_title_stack.push(full_movie_name);
+    actor_name_stack.push(searchPtr->m_actor_name);
+    movie_name_stack.push(searchPtr->prev_movie);
     searchPtr = searchPtr->prev;
   }
-  stack_pair.first = actor_name_stack;
-  stack_pair.second = movie_title_stack;
-  initialize(startPoint); 
-  return stack_pair;
-}
-
-pair<string, int> ActorGraph::getSharedMovie(Node* actor_one, Node* actor_two)
-{
-  pair<string, int> myPair;
-  for(int i=0; i < actor_one->movieList.size(); ++i)
+  string actor_name;
+  string movie_name;
+  while(!actor_name_stack.empty())
   {
-    for(int j=0; j < actor_two->movieList.size(); ++j)
+    actor_name = actor_name_stack.top();
+    movie_name = movie_name_stack.top();
+    actor_name_stack.pop();
+    movie_name_stack.pop();
+    if(movie_name != "")
     {
-      if(actor_one->movieList[i] == actor_two->movieList[j] && actor_one->yearList[i] == actor_two->yearList[j])
-      {
-        myPair.first = actor_one->movieList[i];
-        myPair.second = actor_one->yearList[i];
-        return myPair;
-      }
+      outs << "--[" << movie_name << "]-->";
     }
-  }  
+    outs << "(" << actor_name << ")";
+  } 
 }
-
-void ActorGraph::initialize(Node* nodePtr)
+//This methods clear all nodes for the future operation
+void ActorGraph::makeAllUnvisited()
 {
+  for(int i=0; i < m_visited_node.size(); ++i)
+  {
+    m_visited_node[i]->isItVisited = false;
+    m_visited_node[i]->prev = nullptr;
+    m_visited_node[i]->weight = -1;
+    m_visited_node[i]->prev_movie = "";
+  }
+  m_visited_node.clear();
+}
+//This method check whether two actors are connected or not
+bool ActorGraph::areTheyConnected(string actor_one_name, string actor_two_name)
+{
+  actor_it = m_actor_list.find(actor_one_name);
+  if(actor_it == m_actor_list.end())
+  {
+    return false;
+  }
+  Node* actor_one = actor_it->second;
+  actor_it = m_actor_list.find(actor_two_name);
+  if(actor_it == m_actor_list.end())
+  {
+    return false;
+  }
+  Node* actor_two = actor_it->second;
+  if(actor_one == actor_two)
+  {
+    return true;
+  }
   queue<Node*> myQueue;
-  Node* searchPtr = nodePtr;
+  Node* searchPtr = actor_one;
   myQueue.push(searchPtr);
-  searchPtr->prev = nullptr;
-  searchPtr->dist = -1;
+  searchPtr->isItVisited = true;
+  m_visited_node.push_back(searchPtr);
   while(!myQueue.empty())
   {
     searchPtr = myQueue.front();
     myQueue.pop();
-    for(int i=0; i < searchPtr->adjacentList.size(); ++i)
+    for(movie_set_it = searchPtr->m_movie_list.begin(); movie_set_it != searchPtr->m_movie_list.end(); ++movie_set_it)
     {
-      if(searchPtr->adjacentList[i]->prev != nullptr)
+      movie_it = m_movie_list.find(*movie_set_it);
+      Edge* tempMoviePtr = movie_it->second;
+      for(actor_set_it = tempMoviePtr->m_actor_list.begin(); actor_set_it != tempMoviePtr->m_actor_list.end(); ++actor_set_it)
       {
-        searchPtr->prev = nullptr;
-        searchPtr->dist = -1;
-        myQueue.push(searchPtr->adjacentList[i]);
-      }
-    }
-  }  
-}
-
-void ActorGraph::deleteAll(Node* nodePtr)
-{
-  nodePtr->isItVisited = true;
-  for(int i=0; i < nodePtr->adjacentList.size(); ++i)
-  {
-    if(nodePtr->adjacentList[i]->isItDeleted == 1)
-    { 
-      if(nodePtr->adjacentList[i]->isItVisited == false)
-      {
-        deleteAll(nodePtr->adjacentList[i]);
+        actor_it = m_actor_list.find(*actor_set_it);
+        Node* tempActorPtr = actor_it->second;
+        if(tempActorPtr == actor_two)
+        {
+          makeAllUnvisited();
+          return true;
+        }
+        if(tempActorPtr->isItVisited == false)
+        {
+          tempActorPtr->isItVisited = true;
+          m_visited_node.push_back(tempActorPtr);
+          myQueue.push(tempActorPtr);  
+        }  
       }
     }
   }
-  delete nodePtr;
+  makeAllUnvisited();
+  return false;  
 }
-
+//This method finds the first year when actors are connected
+void ActorGraph::actorConnection()
+{
+  Node* actorSearchPtr;
+  Edge* edgeSearchPtr;
+  Year* yearSearchPtr;
+  unsigned int size_of_pair = m_pair_list.size() - m_numOfInvalid;
+  while(0 < size_of_pair)
+  {
+    yearSearchPtr = m_priority_queue.top();
+    m_priority_queue.pop();
+    for(year_set_it = yearSearchPtr->m_edge_list.begin(); year_set_it != yearSearchPtr->m_edge_list.end(); ++year_set_it)
+    { 
+      movie_it = m_movie_list.find(*year_set_it);
+      edgeSearchPtr = movie_it->second;
+      for(actor_set_it = edgeSearchPtr->m_actor_list.begin(); actor_set_it != edgeSearchPtr->m_actor_list.end(); ++actor_set_it)
+      {
+        actor_it = m_actor_list.find(*actor_set_it);
+        actorSearchPtr = actor_it->second;
+        if(actorSearchPtr->m_movie_list.find(*year_set_it) == actorSearchPtr->m_movie_list.end())
+        {
+          actorSearchPtr->m_movie_list.insert(*year_set_it);
+        }
+      } 
+    }
+    for(unsigned int i=0; i < m_pair_list.size(); ++i)
+    {
+      if(m_pair_list[i].connect == false)
+      {
+        if(areTheyConnected(m_pair_list[i].actor_one, m_pair_list[i].actor_two))
+        {
+          m_pair_list[i].connected_year = yearSearchPtr->m_year;
+          m_pair_list[i].connect = true;
+          --size_of_pair;
+        }
+      }    
+    }    
+  }
+}
+//This method prints out which year two actors are connected
+void ActorGraph::printOutConnectedYear(ostream& outs) const
+{
+  for(int i=0; i < m_pair_list.size(); ++i)
+  {
+    outs << m_pair_list[i].actor_one << "\t" << m_pair_list[i].actor_two << "\t" << m_pair_list[i].connected_year << endl;
+  }     
+}
+//This is a helper method for destructor
+void ActorGraph::destroy()
+{
+  for(actor_it = m_actor_list.begin(); actor_it != m_actor_list.end(); ++actor_it)
+  {
+    delete actor_it->second;  
+  } 
+  for(movie_it = m_movie_list.begin(); movie_it != m_movie_list.end(); ++movie_it)
+  {
+    delete movie_it->second;
+  }
+  for(year_it = m_year_list.begin(); year_it != m_year_list.end(); ++year_it)
+  {
+    delete year_it->second;
+  }
+}
+//destructor
 ActorGraph::~ActorGraph()
 {
-  for(int i=0; i < listOfStartNode.size(); ++i)
-  {
-    deleteAll(listOfStartNode[i]);
-  }
+  destroy();
 }
 
 
@@ -602,17 +510,3 @@ ActorGraph::~ActorGraph()
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
- 
