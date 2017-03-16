@@ -12,6 +12,8 @@
 using namespace std;
 int main (int argc, char* argv[])
 {
+  bool BFS = false;
+  bool UFIND = false;
   //long long time; //all codes related to Timer are commented out
   //Timer myTimer;
   if(argc < 4 || argc > 5)
@@ -19,9 +21,24 @@ int main (int argc, char* argv[])
     cout << "wrong argument" << endl;
     return 0;
   }
+  if(argc == 4)
+  {
+    UFIND = true;
+  }
+  else
+  {
+    if(strcmp(argv[4], "bfs") == 0)
+    {
+      BFS = true;
+    }
+    else
+    {
+      UFIND = true;
+    }
+  }
   ofstream out_stream;
   out_stream.open(argv[3]);
-  if(strcmp(argv[4], "bfs") == 0)
+  if(BFS)
   {
     ActorGraph myGraph;
     myGraph.loadFromFile(argv[1], cout);
@@ -35,7 +52,7 @@ int main (int argc, char* argv[])
     myGraph.printOutConnectedYear(out_stream);
     out_stream.close();  
   }
-  else
+  if(UFIND)
   {
     DisjointSet mySet;
     mySet.loadFromFile(argv[1], cout);
