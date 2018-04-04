@@ -65,10 +65,6 @@ public:
   bool areTheyConnected(std::string actor_one_name, std::string actor_two_name);
   void actorConnection();
   void destroy();
-  void disjointSet();
-  bool disjointSetUnion(std::string actor_one_name, std::string actor_two_name);
-  Node* disjointSetFind(Node* child);
-  bool connectivity(std::string actor_one_name, std::string actor_two_name);
   ~ActorGraph();
 private:
   std::unordered_set<std::string>::iterator year_set_it;
